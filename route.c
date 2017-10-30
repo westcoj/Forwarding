@@ -1,15 +1,26 @@
 #include <sys/socket.h> 
 #include <netpacket/packet.h> 
 #include <net/ethernet.h>
-#include <net/if_arp.h>
 #include <stdio.h>
 #include <errno.h>
 #include <sys/types.h>
 #include <ifaddrs.h>
-#include <netinet/ip.h>
+#include <netinet/if_ether.h>
+#include <string.h>
+struct interface{
+	
+	char *ifa_name;
+	struct sockaddr *ifa_addr;
+};
+
+void buildResponse(struct interface *inter, struct ether_header *ether, struct ether_arp *arp);
+
+struct sockaddr eth0; 
 
 int main(){
   int packet_socket;
+  struct sockaddr_ll *mymac;
+  //unsigned char *ptr;
   //get list of interfaces (actually addresses)
   struct ifaddrs *ifaddr, *tmp;
   if(getifaddrs(&ifaddr)==-1){
@@ -24,10 +35,13 @@ int main(){
     //use the AF_INET addresses in this list for example to get a list
     //of our own IP addresses
     if(tmp->ifa_addr->sa_family==AF_PACKET){
-      printf("Interface: %s\n",tmp->ifa_name);
+      printf("Interface: %s ",tmp->ifa_name);
+      printf("Family: %u\n", tmp->ifa_addr->sa_family);
       //create a packet socket on interface r?-eth1
-      if(!strncmp(&(tmp->ifa_name[3]),"eth1",4)){
+      if(!strncmp(&(tmp->ifa_name[3]),"eth0",4)){
 	printf("Creating Socket on interface %s\n",tmp->ifa_name);
+	//ptr = (unsigned char *)LLADDR((struct sockaddr_ll *)(ifaddr->ifa_addr));
+	//printf("Mac : %02x:%02x:%02x:%02x:%02x:%02x:%02x\n",*ptr,*(ptr+1),*(ptr+2),*(ptr+3),*(ptr+4),*(ptr+5));
 	//create a packet socket
 	//AF_PACKET makes it a packet socket
 	//SOCK_RAW makes it so we get the entire packet
@@ -39,6 +53,9 @@ int main(){
 	  perror("socket");
 	  return 2;
 	}
+	mymac  = (struct sockaddr_ll*)tmp->ifa_addr;
+	printf("Our Mac: %02x:%02x:%02x:%02x:%02x:%02x\n",mymac->sll_addr[0],mymac->sll_addr[1],mymac->sll_addr[2],mymac->sll_addr[3],mymac->sll_addr[4],mymac->sll_addr[5]);
+	//packet_socket->sockaddr_ll;
 	//Bind the socket to the address, so we only get packets
 	//recieved on this specific interface. For packet sockets, the
 	//address structure is a struct sockaddr_ll (see the man page
@@ -48,11 +65,18 @@ int main(){
 	if(bind(packet_socket,tmp->ifa_addr,sizeof(struct sockaddr_ll))==-1){
 	  perror("bind");
 	}
+
+	//eth0 = (struct interface*) malloc(sizeof(struct interface));
+	//*eth0->ifa_addr = tmp->ifa_addr;
+	//eth0->ifa_name = tmp->ifa_name;
+
+
+
       }
     }
   }
   //free the interface list when we don't need it anymore
-  freeifaddrs(ifaddr);
+   freeifaddrs(ifaddr);
 
   //loop and recieve packets. We are only looking at one interface,
   //for the project you will probably want to look at more (to do so,
@@ -76,30 +100,86 @@ int main(){
       continue;
     //start processing all others
     printf("Got a %d byte packet\n", n);
-    
     //what else to do is up to you, you can send packets with send,
     //just like we used for TCP sockets (or you can use sendto, but it
     //is not necessary, since the headers, including all addresses,
     //need to be in the buffer you are sending)
 
-    struct ether_header *eth = (struct ether_header *)(buf);
-    if(ntohs(eth->ether_type)==ETHERTYPE_ARP){ //ARP ID IS 0x0806 (2054)
-      //handle arp
-      struct arp_hdr *arp_header = (struct arp_header *)(buf+sizeof(struct ethhdr));
-      
-    }
 
-    else{
-      if(ntohs(eth->ether_type)==ETHERTYPE_IP){
-	struct iphdr *iph = (struct iphdr *)(buf+sizeof(struct ethhdr));
-	if(
-      }
-    }
-    //Some way to decide if arp
-    //if eth->h_proto == ETH_P_IP we have a ipv4 header next
-   
+    struct ether_header *etherH = (struct ether_header*)(buf);
+    //struct ether_arp *arpH = (struct ether_arp*)(buf+14);
     
-  }
+    //printf("%lu\n", sizeof(struct ether_header));						   
+    
+   // buildResponse(eth0, etherH, arpH);
+    printf("+++++++++++++++Recieving Info+++++++++++++++\n");
+    printf("Sender Mac: %02x:%02x:%02x:%02x:%02x:%02x\n", etherH->ether_shost[0], etherH->ether_shost[1],
+    etherH->ether_shost[2], etherH->ether_shost[3], etherH->ether_shost[4], etherH->ether_shost[5]);
+    //printf("%d\n", arpH->arp_op);
+    printf("type: %x\n", etherH->ether_type);
+     if(ntohs(etherH->ether_type)==ETHERTYPE_ARP){
+	struct ether_arp *arpH = (struct ether_arp*)(buf+14);
+	printf("hardware: %x\n", ntohs(arpH->arp_hrd));
+	printf("protocol: %x\n", ntohs(arpH->arp_pro));
+     	printf("hlen: %x\n", arpH->arp_hln);
+    	printf("plen: %x\n", arpH->arp_pln);
+    	printf("arp op: %x\n", ntohs(arpH->arp_op));
+    	printf("sender mac: %02x:%02x:%02x:%02x:%02x:%02x\n", arpH->arp_sha[0], arpH->arp_sha[1],
+    	arpH->arp_sha[2], arpH->arp_sha[3], arpH->arp_sha[4], arpH->arp_sha[5]);
+    	//printf("%d\n", arpH->arp_op);
+    	printf("sender protoc: %d\n", arpH->arp_spa[0]); 
+	//arpResp->arp_tha[0] = arpH->arp_sha;
+	//arpResp->arp_tpa = arpH->arp_spa;
+	//arpResp->arp_spa = arpH->arp_tpa;
+	//arpResp->arp_sha = //my mac
+	
+	char replyBuffer[42];
+	struct ether_header *outEther = (struct ether_header *)(replyBuffer);
+	struct ether_arp arpResp;
+	memcpy(outEther->ether_dhost, etherH->ether_shost,6);
+	memcpy(outEther->ether_shost, mymac->sll_addr,6);
+	outEther->ether_type = htons(1544);
+	printf("-------------------------------Sending Info-----------------------\n");
+	
+	printf("My Mac: %02x:%02x:%02x:%02x:%02x:%02x\n", outEther->ether_shost[0], outEther->ether_shost[1],
+    	outEther->ether_shost[2], outEther->ether_shost[3], outEther->ether_shost[4], outEther->ether_shost[5]);
+    
+	printf("Dest Mac: %02x:%02x:%02x:%02x:%02x:%02x\n", outEther->ether_dhost[0], outEther->ether_dhost[1],
+    	outEther->ether_dhost[2], outEther->ether_dhost[3], outEther->ether_dhost[4], outEther->ether_dhost[5]);
+
+	printf("Protocol: %x\n",outEther->ether_type);
+ 
+	}
+        
+ 
+    	    
+ 	
+    int i;
+     //arpResp->arp_sha =
+    //arpResp->arp_spa =
+    //arpResp->arp_tha =
+    //arpResp->arp_tpa =
+	
+    //memcpy(arpResp->arp_sha,  
+   // memcpy(arpResp->arp_tha, arpH->arp_sha, sizeof(arpH->arp_sha));
+    //memcpy(arpResp->arp_sha, 
+	    
+
+ //struct ether_arp if_arp
+//struct iphdr *iph = (struct iphdr*)(buf);
+    //struct ether_arp *header = (struct ether_arp*)(buf);
+    //printf("%u\n", ntohs(eth->ether_type));   
+    }
   //exit
   return 0;
 }
+void buildResponse(struct interface *inter, struct ether_header *ether, struct ether_arp *arp){
+
+		printf("%s\n", inter->ifa_name);
+		printf("%d\n", inter->ifa_addr->sa_family);
+
+}
+
+
+
+
