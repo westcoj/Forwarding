@@ -125,8 +125,13 @@ int main(){
     	printf("plen: %x\n", arpH->arp_pln);
     	printf("arp op: %x\n", ntohs(arpH->arp_op));
     	printf("sender mac: %02x:%02x:%02x:%02x:%02x:%02x\n", arpH->arp_sha[0], arpH->arp_sha[1],
-    	arpH->arp_sha[2], arpH->arp_sha[3], arpH->arp_sha[4], arpH->arp_sha[5]);
-    	//printf("%d\n", arpH->arp_op);
+    		arpH->arp_sha[2], arpH->arp_sha[3], arpH->arp_sha[4], arpH->arp_sha[5]);
+	printf("sender IP: %02d:%02d:%02d:%02d\n", arpH->arp_spa[0], arpH->arp_spa[1],
+    		arpH->arp_spa[2], arpH->arp_spa[3]);
+	printf("Target IP: %02d:%02d:%02d:%02d\n", arpH->arp_tpa[0], arpH->arp_tpa[1],
+    		arpH->arp_tpa[2], arpH->arp_tpa[3]);
+	
+	
     	printf("sender protoc: %d\n", arpH->arp_spa[0]); 
 	//arpResp->arp_tha[0] = arpH->arp_sha;
 	//arpResp->arp_tpa = arpH->arp_spa;
@@ -135,12 +140,12 @@ int main(){
 	
 	char replyBuffer[42];
 	struct ether_header *outEther = (struct ether_header *)(replyBuffer);
-	struct ether_arp arpResp;
+	struct ether_arp *arpResp = (struct ether_arp *)(replyBuffer+14);
 	memcpy(outEther->ether_dhost, etherH->ether_shost,6);
 	memcpy(outEther->ether_shost, mymac->sll_addr,6);
 	outEther->ether_type = htons(1544);
 	printf("-------------------------------Sending Info-----------------------\n");
-	
+	printf("ETHER HEADER:_________________________\n");
 	printf("My Mac: %02x:%02x:%02x:%02x:%02x:%02x\n", outEther->ether_shost[0], outEther->ether_shost[1],
     	outEther->ether_shost[2], outEther->ether_shost[3], outEther->ether_shost[4], outEther->ether_shost[5]);
     
@@ -148,7 +153,23 @@ int main(){
     	outEther->ether_dhost[2], outEther->ether_dhost[3], outEther->ether_dhost[4], outEther->ether_dhost[5]);
 
 	printf("Protocol: %x\n",outEther->ether_type);
- 
+ 	
+	arpResp->ea_hdr.ar_hrd = 0x100;
+	arpResp->ea_hdr.ar_pro = 0x8;
+	arpResp->ea_hdr.ar_hln = 0x6;
+	arpResp->ea_hdr.ar_pln = 0x4;
+	arpResp->ea_hdr.ar_op = 0x2;
+	memcpy(arpResp->arp_tha,arpH->arp_sha,6);
+	memcpy(arpResp->arp_tpa,arpH->arp_spa,4);
+	memcpy(arpResp->arp_sha,outEther->ether_shost,6);
+	memcpy(arpResp->arp_spa,arpH->arp_tpa,4);
+
+	printf("ARPRESP HEADER:__________________\n");
+	
+	
+	
+	
+	
 	}
         
  
