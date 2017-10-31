@@ -143,7 +143,7 @@ int main(){
 	struct ether_arp *arpResp = (struct ether_arp *)(replyBuffer+14);
 	memcpy(outEther->ether_dhost, etherH->ether_shost,6);
 	memcpy(outEther->ether_shost, mymac->sll_addr,6);
-	outEther->ether_type = htons(1544);
+	outEther->ether_type = 1544;
 	printf("-------------------------------Sending Info-----------------------\n");
 	printf("ETHER HEADER:_________________________\n");
 	printf("My Mac: %02x:%02x:%02x:%02x:%02x:%02x\n", outEther->ether_shost[0], outEther->ether_shost[1],
@@ -158,7 +158,7 @@ int main(){
 	arpResp->ea_hdr.ar_pro = 0x8;
 	arpResp->ea_hdr.ar_hln = 0x6;
 	arpResp->ea_hdr.ar_pln = 0x4;
-	arpResp->ea_hdr.ar_op = 0x2;
+	arpResp->ea_hdr.ar_op = htons(0x2);
 	memcpy(arpResp->arp_tha,arpH->arp_sha,6);
 	memcpy(arpResp->arp_tpa,arpH->arp_spa,4);
 	memcpy(arpResp->arp_sha,outEther->ether_shost,6);
@@ -166,15 +166,29 @@ int main(){
 
 	printf("ARPRESP HEADER:__________________\n");
 	
+	printf("Hardware: %x\n", ntohs(arpResp->arp_hrd));
+	printf("Protocol: %x\n", ntohs(arpResp->arp_pro));
+     	printf("Hlen: %x\n", arpResp->arp_hln);
+    	printf("Plen: %x\n", arpResp->arp_pln);
+    	printf("Arp Op: %x\n", ntohs(arpResp->arp_op));
+    	printf("Sender Mac: %02x:%02x:%02x:%02x:%02x:%02x\n", arpResp->arp_sha[0], arpResp->arp_sha[1],
+    		arpResp->arp_sha[2], arpResp->arp_sha[3], arpResp->arp_sha[4], arpResp->arp_sha[5]);
+    	printf("Sender Mac: %02x:%02x:%02x:%02x:%02x:%02x\n", arpResp->arp_tha[0], arpResp->arp_tha[1],
+    		arpResp->arp_tha[2], arpResp->arp_tha[3], arpResp->arp_tha[4], arpResp->arp_tha[5]);
+	printf("Sender IP: %02d:%02d:%02d:%02d\n", arpResp->arp_spa[0], arpResp->arp_spa[1],
+    		arpResp->arp_spa[2], arpResp->arp_spa[3]);
+	printf("Target IP: %02d:%02d:%02d:%02d\n", arpResp->arp_tpa[0], arpResp->arp_tpa[1],
+    		arpResp->arp_tpa[2], arpResp->arp_tpa[3]);
 	
 	
-	
+	int sent = send(packet_socket,&replyBuffer,42,0);
+	if(sent<0) {perror("SEND");}
 	
 	}
         
- 
-    	    
- 	
+    if(ntohs(etherH->ether_type)==ETHERTYPE_IP){
+	printf("Got IPV4 packet!\n");   
+    } 	
     int i;
      //arpResp->arp_sha =
     //arpResp->arp_spa =
