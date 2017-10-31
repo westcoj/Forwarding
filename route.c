@@ -62,7 +62,7 @@ int main(){
       printf("Interface: %s ",tmp->ifa_name);
       printf("Family: %u\n", tmp->ifa_addr->sa_family);
       //create a packet socket on interface r?-eth1
-      if(!strncmp(&(tmp->ifa_name[3]),"eth1",4)){
+      if(!strncmp(&(tmp->ifa_name[3]),"eth0",4)){
 	printf("Creating Socket on interface %s\n",tmp->ifa_name);
 	//ptr = (unsigned char *)LLADDR((struct sockaddr_ll *)(ifaddr->ifa_addr));
 	//printf("Mac : %02x:%02x:%02x:%02x:%02x:%02x:%02x\n",*ptr,*(ptr+1),*(ptr+2),*(ptr+3),*(ptr+4),*(ptr+5));
@@ -230,7 +230,7 @@ int main(){
 	if((unsigned int)ipH->ip_p==1){
 		printf("Got ICMP Packet\n");
 		//getting and building ICMP
-		char replyBuffer[90];
+		char replyBuffer[98];
 		struct ether_header *outEther = (struct ether_header *)(replyBuffer);
 		struct ip *ipHR = (struct ip *)(replyBuffer+sizeof(struct ether_header));
 		struct icmphdr * icmpHR = (struct icmphdr *)(replyBuffer+14+sizeof(struct ip));
@@ -249,8 +249,8 @@ int main(){
 		ipHR->ip_hl = 5;
 		ipHR->ip_v = 4;
 		ipHR->ip_tos = 0;
-		ipHR->ip_len = (sizeof(struct ip) + sizeof(struct icmphdr));
-		ipHR->ip_id = htons(56);
+		ipHR->ip_len =htons( (sizeof(struct ip) + sizeof(struct icmphdr))+48+8);
+		ipHR->ip_id = ipH->ip_id;
 		ipHR->ip_off=0;
 		ipHR->ip_ttl = 64;
 		ipHR->ip_p = 1;
@@ -276,10 +276,10 @@ int main(){
 			icmpHR->un.echo.sequence = icmpH->un.echo.sequence;
 			icmpHR->un.echo.id = icmpH->un.echo.id;
 			icmpHR->checksum=0;
-			memcpy(replyBuffer+42,buf+50,48);
-			icmpHR->checksum = checksum((unsigned short *)(replyBuffer+34), (sizeof(struct icmphdr) + 48));
+			memcpy(replyBuffer+50,buf+50,48);
+			icmpHR->checksum = checksum((unsigned short *)(replyBuffer+34), (sizeof(struct icmphdr) + 48+16));
 			//memcpy(replyBuffer+50,buf+50,48);
-			int sender = send(packet_socket,&replyBuffer,90,0);
+			int sender = send(packet_socket,&replyBuffer,98,0);
 			if(sender<0) {perror("Send ICMP");}
 		}
 	
