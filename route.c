@@ -7,6 +7,8 @@
 #include <ifaddrs.h>
 #include <netinet/if_ether.h>
 #include <string.h>
+#include <netinet/ip.h>
+#include <arpa/inet.h>
 struct interface{
 	
 	char *ifa_name;
@@ -116,7 +118,7 @@ int main(){
     printf("Sender Mac: %02x:%02x:%02x:%02x:%02x:%02x\n", etherH->ether_shost[0], etherH->ether_shost[1],
     etherH->ether_shost[2], etherH->ether_shost[3], etherH->ether_shost[4], etherH->ether_shost[5]);
     //printf("%d\n", arpH->arp_op);
-    printf("type: %x\n", etherH->ether_type);
+    printf("type: %x\n",ntohs(etherH->ether_type));
      if(ntohs(etherH->ether_type)==ETHERTYPE_ARP){
 	struct ether_arp *arpH = (struct ether_arp*)(buf+14);
 	printf("hardware: %x\n", ntohs(arpH->arp_hrd));
@@ -188,8 +190,22 @@ int main(){
         
     if(ntohs(etherH->ether_type)==ETHERTYPE_IP){
 	printf("Got IPV4 packet!\n");   
-    } 	
-    int i;
+	struct ip *ipH = (struct ip *)(buf+14);
+	printf("IP HEADER: --------------------------------- \n");
+	//printf("Target IP: %02d:%02d:%02d:%02d\n", ipH->ip_src[0],ipH->ip_src[1],ipH->ip_src[2],ipH->ip_src[3]);
+	//printf("Target IP: %02d:%02d:%02d:%02d\n", ipH->ip_dst[0],ipH->ip_dst[1],ipH->ip_dst[2],ipH->ip_dst[3]);
+	char *sip = inet_ntoa(ipH->ip_src);
+	char *dip = inet_ntoa(ipH->ip_dst);
+	printf("%s\n",sip);
+	printf("%s\n",dip); 
+	printf("%d\n",(unsigned int)ipH->ip_p);
+	if((unsigned int)ipH->ip_p==1){
+		printf("Got ICMP Packet\n");
+	}
+
+
+    }
+ 	
      //arpResp->arp_sha =
     //arpResp->arp_spa =
     //arpResp->arp_tha =
