@@ -201,6 +201,26 @@ int main(){
 	printf("%d\n",(unsigned int)ipH->ip_p);
 	if((unsigned int)ipH->ip_p==1){
 		printf("Got ICMP Packet\n");
+		//getting and building ICMP
+		char replyBuffer[98];
+		struct ether_header *outEther = (struct ether_header *)(replyBuffer);
+		struct ip *ipHR = (struct ip *)(replyBuffer+14);
+		memcpy(outEther->ether_dhost, etherH->ether_shost,6);
+		memcpy(outEther->ether_shost, mymac->sll_addr,6);
+		outEther->ether_type = 0x800;
+		//IP building
+		ipHR->ip_hl = 5;
+		ipHR->ip_v = 4;
+		memcpy(ipHR->ip_tos,ipH->ip_tos,1)
+		ipHR->ip_len = (sizeof(struct ip) + sizeof(struct icmphdr));
+		ipHR->ip_id = 56;
+		ipHR->ip_off=0;
+		ipHR->ip_ttl = 64;
+		//ipHR->ip_sum;
+		memcpy(ipHR->ip_src,ipH->ip_dst,4)
+		memcpy(ipHR->ip_src,ipH->ip_dst,4)
+		memcpy(ipHR->ip_src,ipH->ip_dst,4)
+		memcpy(ipHR->ip_src,ipH->ip_dst,4)
 	}
 
 
