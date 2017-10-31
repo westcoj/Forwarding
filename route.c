@@ -62,7 +62,7 @@ int main(){
       printf("Interface: %s ",tmp->ifa_name);
       printf("Family: %u\n", tmp->ifa_addr->sa_family);
       //create a packet socket on interface r?-eth1
-      if(!strncmp(&(tmp->ifa_name[3]),"eth0",4)){
+      if(!strncmp(&(tmp->ifa_name[3]),"eth1",4)){
 	printf("Creating Socket on interface %s\n",tmp->ifa_name);
 	//ptr = (unsigned char *)LLADDR((struct sockaddr_ll *)(ifaddr->ifa_addr));
 	//printf("Mac : %02x:%02x:%02x:%02x:%02x:%02x:%02x\n",*ptr,*(ptr+1),*(ptr+2),*(ptr+3),*(ptr+4),*(ptr+5));
@@ -230,13 +230,13 @@ int main(){
 	if((unsigned int)ipH->ip_p==1){
 		printf("Got ICMP Packet\n");
 		//getting and building ICMP
-		char replyBuffer[98];
+		char replyBuffer[90];
 		struct ether_header *outEther = (struct ether_header *)(replyBuffer);
-		struct ip *ipHR = (struct ip *)(replyBuffer+14);
+		struct ip *ipHR = (struct ip *)(replyBuffer+sizeof(struct ether_header));
 		struct icmphdr * icmpHR = (struct icmphdr *)(replyBuffer+14+sizeof(struct ip));
 		memcpy(outEther->ether_dhost, etherH->ether_shost,6);
 		memcpy(outEther->ether_shost, mymac->sll_addr,6);
-		outEther->ether_type = 2048;
+		outEther->ether_type =htons(2048);
 		printf("My Mac: %02x:%02x:%02x:%02x:%02x:%02x\n", outEther->ether_shost[0], outEther->ether_shost[1],
     			outEther->ether_shost[2], outEther->ether_shost[3], outEther->ether_shost[4], outEther->ether_shost[5]);
 		printf("Dest Mac: %02x:%02x:%02x:%02x:%02x:%02x\n", outEther->ether_dhost[0], outEther->ether_dhost[1],
@@ -253,6 +253,7 @@ int main(){
 		ipHR->ip_id = htons(56);
 		ipHR->ip_off=0;
 		ipHR->ip_ttl = 64;
+		ipHR->ip_p = 1;
 		ipHR->ip_sum = 0;
 		ipHR->ip_sum = checksum((unsigned short *) (replyBuffer+14), sizeof(struct ip));
 		printf("IP HexCheck: %x\n",htons(ipHR->ip_sum));
@@ -261,26 +262,24 @@ int main(){
 		//printf("Target IP: %02d:%02d:%02d:%02d\n", ipH->ip_src[0],ipH->ip_src[1],ipH->ip_src[2],ipH->ip_src[3]);
 		//printf("Target IP: %02d:%02d:%02d:%02d\n", ipH->ip_dst[0],ipH->ip_dst[1],ipH->ip_dst[2],ipH->ip_dst[3]);
 		char *sip = inet_ntoa(ipHR->ip_src);
-		//char *dip = inet_ntoa(ipHR->ip_dst);
-		
-	
 		printf("Source IP: %s\n",sip);
-		//printf("Target IP: %s\n",dip); 
+		char *dip = inet_ntoa(ipHR->ip_dst);
+		printf("Target IP: %s\n",dip); 
 		printf("TLength: %5d\n", ipHR->ip_len);
 		printf("TOS: %4d\n", ipHR->ip_tos);
 		printf("TTL: %4d\n",ipHR->ip_ttl);
 		//set up icmp		
 		printf("ICMP Type: %d\n", icmpH->type);
 		if(icmpH->type==8){
-			icmpHR->type=ICMP_ECHO;
+			icmpHR->type=0;
 			icmpHR->code=0;
 			icmpHR->un.echo.sequence = icmpH->un.echo.sequence;
 			icmpHR->un.echo.id = icmpH->un.echo.id;
 			icmpHR->checksum=0;
-			memcpy(replyBuffer+50,buf+50,48);
+			memcpy(replyBuffer+42,buf+50,48);
 			icmpHR->checksum = checksum((unsigned short *)(replyBuffer+34), (sizeof(struct icmphdr) + 48));
 			//memcpy(replyBuffer+50,buf+50,48);
-			int sender = send(packet_socket,&replyBuffer,98,0);
+			int sender = send(packet_socket,&replyBuffer,90,0);
 			if(sender<0) {perror("Send ICMP");}
 		}
 	
