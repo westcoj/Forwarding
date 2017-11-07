@@ -31,6 +31,8 @@ private:
     std::map<std::string, std::vector<std::string> > table;
     std::vector<struct ifaddrs> interfaces;
     std::vector<int> sockets;
+    std::map<char *, struct sockaddr_in *> ipv4map;
+    std::map<char *, struct sockaddr_in *>::iterator ipv4IT;
 
     //keep the initial linked list around
     struct ifaddrs *ifaddr;
@@ -77,6 +79,19 @@ public:
             //about those for the purpose of enumerating interfaces. We can
             //use the AF_INET addresses in this list for example to get a list
             //of our own IP addresses
+            if (tmp->ifa_addr->sa_family == AF_INET) {
+                printf("found IP address\n");
+                printf("name: %s \n", tmp->ifa_name);
+                printf("family: %u \n", tmp->ifa_addr->sa_family);
+                struct sockaddr_in *ip = (struct sockaddr_in *) tmp->ifa_addr;
+                ipv4map.insert(
+                        std::pair<char *, struct sockaddr_in *>(tmp->ifa_name, (struct sockaddr_in *) tmp->ifa_addr));
+                char *ipN = inet_ntoa(ip->sin_addr);
+                printf("Address: <%s>\n", ipN);
+                //printf("\t  Address : <%s>\n", host);
+            }
+
+
             if (tmp->ifa_addr->sa_family == AF_PACKET) {
                 printf("found socket address\n");
                 printf("name: %s \n", tmp->ifa_name);
@@ -145,16 +160,17 @@ public:
             std::cout << "Interface : " << it->first->ifa_name << " socket: "
                       << it->second << std::endl;
             struct sockaddr_ll *mymac = (struct sockaddr_ll *) it->first->ifa_addr;
-            printf("MAC: %02x:%02x:%02x:%02x:%02x:%02x\n", mymac->sll_addr[0], mymac->sll_addr[1], mymac->sll_addr[2],
+            printf("MAC: %02x:%02x:%02x:%02x:%02x:%02x\n", mymac->sll_addr[0], mymac->sll_addr[1],
+                   mymac->sll_addr[2],
                    mymac->sll_addr[3], mymac->sll_addr[4], mymac->sll_addr[5]);
             //struct sockaddr_in *myip = (struct sockaddr_in *) it->first->ifa_addr;
             if (!strncmp(&(it->first->ifa_name)[3], "eth", 3)) {
                 std::cout << "found: " << it->first->ifa_name << std::endl;
                 //if (i <= nums) {
-                    t[i] = std::thread (&Router::listen, this, *it->first, it->second);
-                    //t[i].join();
-                    t[i].detach();
-                    i++;
+                t[i] = std::thread(&Router::listen, this, *it->first, it->second);
+                //t[i].join();
+                t[i].detach();
+                i++;
                 //}
                 //listen(*it->first, it->second);
 
@@ -167,9 +183,31 @@ public:
     int listen(struct ifaddrs interface, int socket) {
 
         int packet_socket = socket;
+        //GET PERSONAL MAC/IP
+        //if (interface.ifa_addr.sa_family)
+        struct sockaddr_in *myIP;
 
         std::cout << "listening on interface " << interface.ifa_name << std::endl;
         struct sockaddr_ll *mymac = (struct sockaddr_ll *) interface.ifa_addr;
+
+        for (auto &x: ipv4map) {
+            char *ipN = inet_ntoa(x.second->sin_addr);
+            std::cout << x.first << " : " << ipN << '\n';
+            int comp = strncmp(x.first, interface.ifa_name, 7);
+            if (comp == 0) {
+                printf("Got Match\n");
+                std::cout << interface.ifa_name << "|" << x.first << '\n';
+                myIP = x.second;
+                char *ipN = inet_ntoa(myIP->sin_addr);
+                printf("Listening Address: <%s>\n", ipN);
+                break;
+            } else {
+                printf("Fuck\n");
+
+            }
+
+        }
+
         while (1) {
 
             char buf[1500];
@@ -182,8 +220,11 @@ public:
             //READ ETHER HEADER
             struct ether_header *etherH = (struct ether_header *) (buf);
             printf("type: %x\n", ntohs(etherH->ether_type));
-            //Handle Arp
+
+            //HANDLE ARP
             if (ntohs(etherH->ether_type) == ETHERTYPE_ARP) {
+
+                //IF ARP REQUEST
                 struct ether_arp *arpH = (struct ether_arp *) (buf + 14);
                 char replyBuffer[42];
                 struct ether_header *outEther = (struct ether_header *) (replyBuffer);
@@ -210,88 +251,84 @@ public:
                 //HANDLE ME OR SOMEONE ELSE
 
 
+                //THIS PACKET FOR ME
+                if (myIP == ipH->ip_dst) {
+                    //HANDLE ICMP TO ME
+                    struct icmphdr *icmpH = (struct icmphdr *) (buf + 34);
+
+                    //printf("IP HEADER: --------------------------------- \n");
+
+                    int payload = (ipH->ip_len - sizeof(struct icmphdr));
+                    if ((unsigned int) ipH->ip_p == 1) {
+                        printf("Got ICMP Packet\n");
+
+                        //getting and building ICMP
+                        char replyBuffer[90];
+                        struct ether_header *outEther = (struct ether_header *) (replyBuffer);
+                        struct ip *ipHR = (struct ip *) (replyBuffer + sizeof(struct ether_header));
+                        struct icmphdr *icmpHR = (struct icmphdr *) (replyBuffer + 14 + sizeof(struct ip));
+                        memcpy(outEther->ether_dhost, etherH->ether_shost, 6);
+                        memcpy(outEther->ether_shost, mymac->sll_addr, 6);
+                        outEther->ether_type = htons(2048);
+
+                        //IP building
+                        ipHR->ip_src = ipH->ip_dst;
+                        ipHR->ip_dst = ipH->ip_src;
+                        ipHR->ip_hl = 5;
+                        ipHR->ip_v = 4;
+                        ipHR->ip_tos = 0;
+                        ipHR->ip_len = htons(76); //sizeof(struct ip) + sizeof(struct icmphdr);
+                        ipHR->ip_id = htons(56);
+                        ipHR->ip_off = 0;
+                        ipHR->ip_ttl = 64;
+                        ipHR->ip_p = 1;
+                        ipHR->ip_sum = 0;
+                        ipHR->ip_sum = checksum((unsigned short *) (replyBuffer + 14), sizeof(struct ip));
+                        //printf("Target IP: %02d:%02d:%02d:%02d\n", ipH->ip_src[0],ipH->ip_src[1],ipH->ip_src[2],ipH->ip_src[3]);
+                        //printf("Target IP: %02d:%02d:%02d:%02d\n", ipH->ip_dst[0],ipH->ip_dst[1],ipH->ip_dst[2],ipH->ip_dst[3]);
+                        char *sip = inet_ntoa(ipHR->ip_src);
+                        char *dip = inet_ntoa(ipHR->ip_dst);
+                        //set up icmp
+                        if (icmpH->type == 8) {
+                            icmpHR->type = 0;
+                            icmpHR->code = 0;
+                            icmpHR->un.echo.sequence = icmpH->un.echo.sequence;
+                            icmpHR->un.echo.id = icmpH->un.echo.id;
+                            icmpHR->checksum = 0;
+                            memcpy(replyBuffer + 42, buf + 50, 48);
+                            icmpHR->checksum = checksum((unsigned short *) (replyBuffer + 34),
+                                                        (sizeof(struct icmphdr) + 48));
+                            //memcpy(replyBuffer+50,buf+50,48);
+                            int sender = send(packet_socket, &replyBuffer, 90, 0);
+                            if (sender < 0) { perror("Send ICMP"); }
 
 
-                //HANDLE ICMP TO ME
-                struct icmphdr *icmpH = (struct icmphdr *) (buf + 34);
-                printf("IP HEADER: --------------------------------- \n");
-                //printf("Target IP: %02d:%02d:%02d:%02d\n", ipH->ip_src[0],ipH->ip_src[1],ipH->ip_src[2],ipH->ip_src[3]);
-                //printf("Target IP: %02d:%02d:%02d:%02d\n", ipH->ip_dst[0],ipH->ip_dst[1],ipH->ip_dst[2],ipH->ip_dst[3]);
-                //char *sip = inet_ntoa(ipH->ip_src);
-                //char *dip = inet_ntoa(ipH->ip_dst);
-                //printf("%s\n",sip);
-                //printf("%s\n",dip);
-                //printf("Protocol: %d\n",(unsigned int)ipH->ip_p);
-                printf("IP HexCheck: %x\n", ntohs(ipH->ip_sum));
-
-                //printf("%d\n",(unsigned int)ipH->ip_hl);
-                //printf("%d\n",(unsigned short)ipH->ip_len);
-                int payload = (ipH->ip_len - sizeof(struct icmphdr));
-                if ((unsigned int) ipH->ip_p == 1) {
-                    printf("Got ICMP Packet\n");
-                    //getting and building ICMP
-                    char replyBuffer[90];
-                    struct ether_header *outEther = (struct ether_header *) (replyBuffer);
-                    struct ip *ipHR = (struct ip *) (replyBuffer + sizeof(struct ether_header));
-                    struct icmphdr *icmpHR = (struct icmphdr *) (replyBuffer + 14 + sizeof(struct ip));
-                    memcpy(outEther->ether_dhost, etherH->ether_shost, 6);
-                    memcpy(outEther->ether_shost, mymac->sll_addr, 6);
-                    outEther->ether_type = htons(2048);
-                    printf("My Mac: %02x:%02x:%02x:%02x:%02x:%02x\n", outEther->ether_shost[0],
-                           outEther->ether_shost[1],
-                           outEther->ether_shost[2], outEther->ether_shost[3], outEther->ether_shost[4],
-                           outEther->ether_shost[5]);
-                    printf("Dest Mac: %02x:%02x:%02x:%02x:%02x:%02x\n", outEther->ether_dhost[0],
-                           outEther->ether_dhost[1],
-                           outEther->ether_dhost[2], outEther->ether_dhost[3], outEther->ether_dhost[4],
-                           outEther->ether_dhost[5]);
-                    printf("Protocol: %x\n", outEther->ether_type);
-
-                    //IP building
-                    ipHR->ip_src = ipH->ip_dst;
-                    ipHR->ip_dst = ipH->ip_src;
-                    ipHR->ip_hl = 5;
-                    ipHR->ip_v = 4;
-                    ipHR->ip_tos = 0;
-                    ipHR->ip_len = htons(76); //sizeof(struct ip) + sizeof(struct icmphdr);
-                    ipHR->ip_id = htons(56);
-                    ipHR->ip_off = 0;
-                    ipHR->ip_ttl = 64;
-                    ipHR->ip_p = 1;
-                    ipHR->ip_sum = 0;
-                    ipHR->ip_sum = checksum((unsigned short *) (replyBuffer + 14), sizeof(struct ip));
-                    printf("IP HexCheck: %x\n", htons(ipHR->ip_sum));
-                    printf("IP HexCheck: %x\n", ntohs(ipHR->ip_sum));
-                    printf("IP HexCheck: %x\n", ipHR->ip_sum);
-                    //printf("Target IP: %02d:%02d:%02d:%02d\n", ipH->ip_src[0],ipH->ip_src[1],ipH->ip_src[2],ipH->ip_src[3]);
-                    //printf("Target IP: %02d:%02d:%02d:%02d\n", ipH->ip_dst[0],ipH->ip_dst[1],ipH->ip_dst[2],ipH->ip_dst[3]);
-                    char *sip = inet_ntoa(ipHR->ip_src);
-                    printf("Source IP: %s\n", sip);
-                    char *dip = inet_ntoa(ipHR->ip_dst);
-                    printf("Target IP: %s\n", dip);
-                    printf("TLength: %5d\n", htons(ipHR->ip_len));
-                    printf("TOS: %4d\n", ipHR->ip_tos);
-                    printf("TTL: %4d\n", ipHR->ip_ttl);
-                    //set up icmp
-                    printf("ICMP Type: %d\n", icmpH->type);
-                    if (icmpH->type == 8) {
-                        icmpHR->type = 0;
-                        icmpHR->code = 0;
-                        icmpHR->un.echo.sequence = icmpH->un.echo.sequence;
-                        icmpHR->un.echo.id = icmpH->un.echo.id;
-                        icmpHR->checksum = 0;
-                        memcpy(replyBuffer + 42, buf + 50, 48);
-                        icmpHR->checksum = checksum((unsigned short *) (replyBuffer + 34),
-                                                    (sizeof(struct icmphdr) + 48));
-                        //memcpy(replyBuffer+50,buf+50,48);
-                        int sender = send(packet_socket, &replyBuffer, 90, 0);
-                        if (sender < 0) { perror("Send ICMP"); }
-
+                        }
 
                     }
 
                 }
 
+                //THIS PACKET NOT FOR ME
+                else{
+                    //Make me an AAAAAAARP, also get proper path.
+                    char arpReqBuffer[42];
+                    struct ether_header *outEther = (struct ether_header *) (arpReqBuffer);
+                    struct ether_arp *arpResp = (struct ether_arp *) (arpReqBuffer + 14);
+                    outEther->ether_dhost = 0xfffffff;
+                    memcpy(outEther->ether_shost, mymac->sll_addr, 6);
+                    outEther->ether_type = 1544;
+                    arpResp->ea_hdr.ar_hrd = 0x100;
+                    arpResp->ea_hdr.ar_pro = 0x8;
+                    arpResp->ea_hdr.ar_hln = 0x6;
+                    arpResp->ea_hdr.ar_pln = 0x4;
+                    arpResp->ea_hdr.ar_op = htons(0x1);
+                    arpResp->arp_tha = 0x000000;
+                    //TARGET IP FROM ROUTE TABLE
+                    memcpy(arpResp->arp_sha, outEther->ether_shost, 6);
+                    memcpy(arpResp->arp_spa, myIP, 4);//??????
+
+                }
             }
         }
 
@@ -341,17 +378,16 @@ public:
 
 
     }
-
 };
 
 int main() {
 
     Router test;
     test.printInterfaces();
+    test.buildTable("r1-table.txt");
     //test.buildTable("r1-table.txt");
-    //test.buildTable("r1-table.txt");    
     printf("done");
-    while(1){}
+    while (1) {}
 
     return 0;
 }
