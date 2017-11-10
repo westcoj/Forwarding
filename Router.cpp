@@ -32,6 +32,7 @@ private:
     std::vector<struct ifaddrs> interfaces;
     std::vector<int> sockets;
     std::map<char *, struct sockaddr_in *> ipv4map;
+    std::map<u_char *, u_char *> macMap;
     //std::map<char *, struct sockaddr_in *>::iterator ipv4IT;
 
     //keep the initial linked list around
@@ -52,7 +53,7 @@ public:
         }
         if (nbytes == 1) {
             oddbyte = 0;
-            *((u_char *) &oddbyte) = *(u_char *) ptr;
+            *((u_char * ) & oddbyte) = *(u_char *) ptr;
             sum += oddbyte;
         }
         sum = (sum >> 16) + (sum & 0xffff);
@@ -195,11 +196,11 @@ public:
             std::cout << x.first << " : " << ipN << '\n';
             int comp = strncmp(x.first, interface.ifa_name, 7);
             if (comp == 0) {
-                printf("Got Match\n");
+                //printf("Got Match\n");
                 std::cout << interface.ifa_name << "|" << x.first << '\n';
                 myIP = x.second;
                 //ipN = inet_ntoa(myIP->sin_addr);
-                printf("Listening Address: <%s>\n", ipN);
+                //printf("Listening Address: <%s>\n", ipN);
                 break;
             } else {
                 //printf("Fuck\n");
@@ -208,6 +209,7 @@ public:
 
         }
 
+        char *forwardBuffer;
         //if(ipN==NULL) return 0;
 
         while (1) {
@@ -221,52 +223,152 @@ public:
 
             //READ ETHER HEADER
             struct ether_header *etherH = (struct ether_header *) (buf);
-            printf("type: %x\n", ntohs(etherH->ether_type));
+            //printf("type: %x\n", ntohs(etherH->ether_type));
 
             //HANDLE ARP
             if (ntohs(etherH->ether_type) == ETHERTYPE_ARP) {
 
                 //IF ARP REQUEST
                 struct ether_arp *arpH = (struct ether_arp *) (buf + 14);
-                char replyBuffer[42];
-                struct ether_header *outEther = (struct ether_header *) (replyBuffer);
-                struct ether_arp *arpResp = (struct ether_arp *) (replyBuffer + 14);
-                memcpy(outEther->ether_dhost, etherH->ether_shost, 6);
-                memcpy(outEther->ether_shost, mymac->sll_addr, 6);
-                outEther->ether_type = 1544;
-                arpResp->ea_hdr.ar_hrd = 0x100;
-                arpResp->ea_hdr.ar_pro = 0x8;
-                arpResp->ea_hdr.ar_hln = 0x6;
-                arpResp->ea_hdr.ar_pln = 0x4;
-                arpResp->ea_hdr.ar_op = htons(0x2);
-                memcpy(arpResp->arp_tha, arpH->arp_sha, 6);
-                memcpy(arpResp->arp_tpa, arpH->arp_spa, 4);
-                memcpy(arpResp->arp_sha, outEther->ether_shost, 6);
-                memcpy(arpResp->arp_spa, arpH->arp_tpa, 4);
-                int sent = send(packet_socket, &replyBuffer, 42, 0);
-                if (sent < 0) { perror("SEND"); }
+                if (ntohs(arpH->ea_hdr.ar_op) == 2) {
+                    printf("ARP RESPONSE FROM APR REQUEST SENT BY ME \n");
+                    printf("hardware: %x\n", ntohs(arpH->arp_hrd));
+                    printf("protocol: %x\n", ntohs(arpH->arp_pro));
+                    printf("hlen: %x\n", arpH->arp_hln);
+                    printf("plen: %x\n", arpH->arp_pln);
+                    printf("arp op: %x\n", ntohs(arpH->arp_op));
+                    printf("sender mac: %02x:%02x:%02x:%02x:%02x:%02x\n", arpH->arp_sha[0], arpH->arp_sha[1],
+                           arpH->arp_sha[2], arpH->arp_sha[3], arpH->arp_sha[4], arpH->arp_sha[5]);
+                    printf("sender IP: %02d:%02d:%02d:%02d\n", arpH->arp_spa[0], arpH->arp_spa[1],
+                           arpH->arp_spa[2], arpH->arp_spa[3]);
+                    printf("Target IP: %02d:%02d:%02d:%02d\n", arpH->arp_tpa[0], arpH->arp_tpa[1],
+                           arpH->arp_tpa[2], arpH->arp_tpa[3]);
+
+                    macMap.insert(std::pair<u_char * ,u_char *>(arpH->arp_sha, arpH->arp_spa));
+                    //send forwardBuffer
+                    if(forwardBuffer!= nullptr) {
+                        struct ether_header *etherHF = (struct ether_header *) (forwardBuffer);
+                        struct ip *ipHF = (struct ip *) (forwardBuffer + sizeof(struct ether_header));
+                        int ipHFSum = ipHF->ip_sum;
+                        ipHF->ip_sum = 0;
+                        int ipHFSumC = checksum((unsigned short *) (forwardBuffer + 14), sizeof(struct ip));
+                        //IP CHECKSUM VERIFY
+                        if(ipHFSum!=ipHFSumC){
+                            printf("IP HexCheck: %x\n",ipHFSum);
+                            printf("IP HexCheck: %x\n",ipHFSumC);
+                            printf("Dropping Packet \n");
+                            forwardBuffer = nullptr;
+                            continue;
+                        }
+
+                        char *nextMac;
+                        int gotMac = 0;
+
+                        for (auto &x:macMap) {
+                            if (x.second == &ipHF->ip_dst) {
+                                nextMac = x.first;
+                                gotMac = 1;
+                            }
+
+                        }
+
+                        if(gotMac==1) {
+                            size_t ipHFL = htons(ipHF->ip_len);
+                            char *forForBuff[ipHFL + 14];
+                            memcpy(etherHF->ether_dhost, nextMac, 6);
+                            memcpy(etherHF->ether_shost, mymac->sll_addr, 6);
+                            ipHF->ip_ttl -= 1;
+                            ipHF->ip_sum = checksum((unsigned short *) (forwardBuffer + 14), sizeof(struct ip));
+                            memcpy(forForBuff,forwardBuffer,ipHFL+14);
+
+                            char *ipGet = inet_ntoa(ipHF->ip_dst);
+                            std::string ipStrGet(ipGet);
+                            std::vector<std::string> targetIF;
+
+                            //GET CORRECT INTERFACE VECTOR
+                            for (auto &x:table) {
+                                std::string bitsS = x.first.substr(x.first.find("/") + 1);
+                                unsigned int bits8 = std::stoul(bitsS);
+                                unsigned int bits = bits8 / 8;
+                                //printf("%d\n", bits);
+                                if (bits8 == 24) bits = 6;
+                                if (bits8 == 16) bits = 4;
+                                std::string cutIpGet = ipStrGet.substr(0, bits);
+                                std::string cutIpMap = x.first.substr(0, bits);
+                                //std::cout << cutIpGet << "|" << cutIpMap << '\n';
+                                if (cutIpGet.compare(cutIpMap) == 0) {
+                                    //printf("Next Hop Match\n");
+                                    targetIF = x.second;
+                                    break;
+                                }
+                            }
+
+                            //FIND ETH STRING IN VECTOR
+                            std::string targetStr;
+                            for (auto x:targetIF) {
+                                int l = x.find("eth");
+                                if (l != std::string::npos) {
+                                    targetStr = x;
+                                }
+                            }
+
+                            //FIND MATCHING PORT/STRING IN SOCKET MAP
+                            int targetInt;
+                            for (auto &x:socketMap) {
+                                //std::cout << x.first->ifa_name << "|" << targetStr.c_str() << '\n';
+                                if (strcmp(x.first->ifa_name, targetStr.c_str()) == 0) {
+                                    //printf("Hooray\n");
+                                    targetInt = x.second;
+                                }
+
+                            }
+
+                            int forwardFRep = send(targetInt, &forForBuff, ipHFL+14, 0);
+                            if (forwardFRep < 0) { perror("Send ArpReq"); }
+
+
+                        }
+
+                    }
+
+
+                } else {
+                    char replyBuffer[42];
+                    struct ether_header *outEther = (struct ether_header *) (replyBuffer);
+                    struct ether_arp *arpResp = (struct ether_arp *) (replyBuffer + 14);
+                    memcpy(outEther->ether_dhost, etherH->ether_shost, 6);
+                    memcpy(outEther->ether_shost, mymac->sll_addr, 6);
+                    outEther->ether_type = 1544;
+                    arpResp->ea_hdr.ar_hrd = 0x100;
+                    arpResp->ea_hdr.ar_pro = 0x8;
+                    arpResp->ea_hdr.ar_hln = 0x6;
+                    arpResp->ea_hdr.ar_pln = 0x4;
+                    arpResp->ea_hdr.ar_op = htons(0x2);
+                    memcpy(arpResp->arp_tha, arpH->arp_sha, 6);
+                    memcpy(arpResp->arp_tpa, arpH->arp_spa, 4);
+                    memcpy(arpResp->arp_sha, outEther->ether_shost, 6);
+                    memcpy(arpResp->arp_spa, arpH->arp_tpa, 4);
+                    macMap.insert(std::pair<u_char * ,u_char *>(arpH->arp_sha, arpH->arp_spa));
+                    int sent = send(packet_socket, &replyBuffer, 42, 0);
+                    if (sent < 0) { perror("SEND"); }
+                }
             }
             //Handle IP
             if (ntohs(etherH->ether_type) == ETHERTYPE_IP) {
                 struct ip *ipH = (struct ip *) (buf + 14);
                 //HANDLE ME OR SOMEONE ELSE
-
-                printf("11111\n");
                 //THIS PACKET FOR ME
                 //char *rcvIP = inet_ntoa(ipH->ip_src);
                 //char *ipVN = inet_ntoa(myIP->sin_addr);
                 //std::cout << inet_ntoa(myIP->sin_addr) << "|" << rcvIP << '\n';
-                if (myIP->sin_addr.s_addr==ipH->ip_dst.s_addr){
+                if (myIP->sin_addr.s_addr == ipH->ip_dst.s_addr) {
                     //HANDLE ICMP TO ME
-                    struct icmphdr *icmpH = (struct icmphdr *) (buf + 34);
-
                     //printf("IP HEADER: --------------------------------- \n");
-
-                    int payload = (ipH->ip_len - sizeof(struct icmphdr));
                     if ((unsigned int) ipH->ip_p == 1) {
                         printf("Got ICMP Packet\n");
-
                         //getting and building ICMP
+                        struct icmphdr *icmpH = (struct icmphdr *) (buf + 34);
+                        int payload = (ipH->ip_len - sizeof(struct icmphdr));
                         char replyBuffer[90];
                         struct ether_header *outEther = (struct ether_header *) (replyBuffer);
                         struct ip *ipHR = (struct ip *) (replyBuffer + sizeof(struct ether_header));
@@ -290,8 +392,8 @@ public:
                         ipHR->ip_sum = checksum((unsigned short *) (replyBuffer + 14), sizeof(struct ip));
                         //printf("Target IP: %02d:%02d:%02d:%02d\n", ipH->ip_src[0],ipH->ip_src[1],ipH->ip_src[2],ipH->ip_src[3]);
                         //printf("Target IP: %02d:%02d:%02d:%02d\n", ipH->ip_dst[0],ipH->ip_dst[1],ipH->ip_dst[2],ipH->ip_dst[3]);
-                        char *sip = inet_ntoa(ipHR->ip_src);
-                        char *dip = inet_ntoa(ipHR->ip_dst);
+                        //char *sip = inet_ntoa(ipHR->ip_src);
+                        //char *dip = inet_ntoa(ipHR->ip_dst);
                         //set up icmp
                         if (icmpH->type == 8) {
                             icmpHR->type = 0;
@@ -315,74 +417,181 @@ public:
 
                     //THIS PACKET NOT FOR ME
                 else {
-                    printf("22222222\n");
-                    //Make me an AAAAAAARP, also get proper path.
-                    char arpReqBuffer[42];
-                    struct ether_header *outEther = (struct ether_header *) (arpReqBuffer);
-                    struct ether_arp *arpResp = (struct ether_arp *) (arpReqBuffer + 14);
-                    outEther->ether_dhost[0] = 0xff;
-                    outEther->ether_dhost[1] = 0xff;
-                    outEther->ether_dhost[2] = 0xff;
-                    outEther->ether_dhost[3] = 0xff;
-                    outEther->ether_dhost[4] = 0xff;
-                    outEther->ether_dhost[5] = 0xff;
-                    memcpy(outEther->ether_shost, mymac->sll_addr, 6);
-                    outEther->ether_type = 1544;
-                    arpResp->ea_hdr.ar_hrd = 0x100;
-                    arpResp->ea_hdr.ar_pro = 0x8;
-                    arpResp->ea_hdr.ar_hln = 0x6;
-                    arpResp->ea_hdr.ar_pln = 0x4;
-                    arpResp->ea_hdr.ar_op = htons(0x1);
-                    arpResp->arp_tha[0] = 0x00;
-                    arpResp->arp_tha[1] = 0x00;
-                    arpResp->arp_tha[2] = 0x00;
-                    arpResp->arp_tha[3] = 0x00;
-                    arpResp->arp_tha[4] = 0x00;
-                    arpResp->arp_tha[5] = 0x00;
-                    memcpy(arpResp->arp_spa, &ipH->ip_dst, 4);
-                    memcpy(arpResp->arp_sha, outEther->ether_shost, 6);
-                    memcpy(arpResp->arp_spa, &myIP->sin_addr, 4);
-                    //TARGET IP FROM ROUTE TABLE
-                    std::string ipStr(interface.ifa_name);
-                    char *ipGet = inet_ntoa(ipH->ip_dst);
-                    std::string ipStrGet(ipGet);
-                    std::vector<std::string> targetIF;
 
-                    printf("ARPRESP HEADER:__________________\n");
 
-                    printf("Hardware: %x\n", ntohs(arpResp->arp_hrd));
-                    printf("Protocol: %x\n", ntohs(arpResp->arp_pro));
-                    printf("Hlen: %x\n", arpResp->arp_hln);
-                    printf("Plen: %x\n", arpResp->arp_pln);
-                    printf("Arp Op: %x\n", ntohs(arpResp->arp_op));
-                    printf("Sender Mac: %02x:%02x:%02x:%02x:%02x:%02x\n", arpResp->arp_sha[0], arpResp->arp_sha[1],
-                           arpResp->arp_sha[2], arpResp->arp_sha[3], arpResp->arp_sha[4], arpResp->arp_sha[5]);
-                    printf("Sender Mac: %02x:%02x:%02x:%02x:%02x:%02x\n", arpResp->arp_tha[0], arpResp->arp_tha[1],
-                           arpResp->arp_tha[2], arpResp->arp_tha[3], arpResp->arp_tha[4], arpResp->arp_tha[5]);
-                    printf("Sender IP: %02d:%02d:%02d:%02d\n", arpResp->arp_spa[0], arpResp->arp_spa[1],
-                           arpResp->arp_spa[2], arpResp->arp_spa[3]);
-                    printf("Target IP: %02d:%02d:%02d:%02d\n", arpResp->arp_tpa[0], arpResp->arp_tpa[1],
-                           arpResp->arp_tpa[2], arpResp->arp_tpa[3]);
-
-                    for (auto &x:table) {
-                        std::string bitsS = x.first.substr(x.first.find("/") + 1);
-                        unsigned int bits8 = std::stoul(bitsS);
-                        unsigned int bits = bits8/8;
-                        printf("%d\n", bits);
-                        if(bits8==24) bits = 6;
-                        if(bits8==16) bits = 4;
-                        std::string cutIpGet = ipStrGet.substr(0, bits);
-                        std::string cutIpMap = x.first.substr(0, bits);
-                        std::cout << cutIpGet << "|" << cutIpMap << '\n';
-                        if (cutIpGet.compare(cutIpMap) == 0) {
-                            printf("Next Hop Match\n");
-                            targetIF = x.second;
+                    //check table for next hop
+                    char *nextMac;
+                    int gotMac = 0;
+                    for (auto &x:macMap) {
+                        if (x.second == &ipH->ip_dst) {
+                            nextMac = x.first;
+                            gotMac = 1;
                         }
+
                     }
 
+                    if (gotMac == 1) {
+                        size_t forLen = ntohs(ipH->ip_len);
+                        char *forBuff[forLen + 14];
+                        memcpy(forBuff, buf, forLen + 14);
+                        struct ether_header *outEther = (struct ether_header *) (forBuff);
+                        struct ip *ipHR = (struct ip *) (forBuff + sizeof(struct ether_header));
+
+                        ipHR->ip_ttl -= 1;
+                        ipHR->ip_sum = 0;
+                        ipHR->ip_sum = checksum((unsigned short *) (forBuff + 14), sizeof(struct ip));
+
+                        memcpy(outEther->ether_dhost, nextMac, 6);
+                        memcpy(outEther->ether_shost, mymac->sll_addr, 6);
+
+                        char *ipGet = inet_ntoa(ipH->ip_dst);
+                        std::string ipStrGet(ipGet);
+                        std::vector<std::string> targetIF;
 
 
+                        for (auto &x:table) {
+                            std::string bitsS = x.first.substr(x.first.find("/") + 1);
+                            unsigned int bits8 = std::stoul(bitsS);
+                            unsigned int bits = bits8 / 8;
+                            //printf("%d\n", bits);
+                            if (bits8 == 24) bits = 6;
+                            if (bits8 == 16) bits = 4;
+                            std::string cutIpGet = ipStrGet.substr(0, bits);
+                            std::string cutIpMap = x.first.substr(0, bits);
+                            //std::cout << cutIpGet << "|" << cutIpMap << '\n';
+                            if (cutIpGet.compare(cutIpMap) == 0) {
+                                //printf("Next Hop Match\n");
+                                targetIF = x.second;
+                                break;
+                            }
+                        }
+                        std::string targetStr;
+                        for (auto x:targetIF) {
+                            int l = x.find("eth");
+                            if (l != std::string::npos) {
+                                targetStr = x;
+                            }
+                        }
 
+                        int targetInt;
+                        for (auto &x:socketMap) {
+                            //std::cout << x.first->ifa_name << "|" << targetStr.c_str() << '\n';
+                            if (strcmp(x.first->ifa_name, targetStr.c_str()) == 0) {
+                                //printf("Hooray\n");
+                                targetInt = x.second;
+                            }
+
+                        }
+
+                        int forwardRep = send(targetInt, &forBuff, forLen+14, 0);
+                        if (forwardRep < 0) { perror("Send ArpReq"); }
+
+
+                    } else {
+                        //Else get ARP
+                        memcpy(forwardBuffer, buf, 1500);
+                        //Make me an AAAAAAARP, also get proper path.
+                        char arpReqBuffer[42];
+                        struct ether_header *outEther = (struct ether_header *) (arpReqBuffer);
+                        struct ether_arp *arpResp = (struct ether_arp *) (arpReqBuffer + 14);
+                        outEther->ether_dhost[0] = 0xff;
+                        outEther->ether_dhost[1] = 0xff;
+                        outEther->ether_dhost[2] = 0xff;
+                        outEther->ether_dhost[3] = 0xff;
+                        outEther->ether_dhost[4] = 0xff;
+                        outEther->ether_dhost[5] = 0xff;
+                        memcpy(outEther->ether_shost, mymac->sll_addr, 6);
+                        outEther->ether_type = 1544;
+                        arpResp->ea_hdr.ar_hrd = 0x100;
+                        arpResp->ea_hdr.ar_pro = 0x8;
+                        arpResp->ea_hdr.ar_hln = 0x6;
+                        arpResp->ea_hdr.ar_pln = 0x4;
+                        arpResp->ea_hdr.ar_op = htons(0x1);
+                        arpResp->arp_tha[0] = 0x00;
+                        arpResp->arp_tha[1] = 0x00;
+                        arpResp->arp_tha[2] = 0x00;
+                        arpResp->arp_tha[3] = 0x00;
+                        arpResp->arp_tha[4] = 0x00;
+                        arpResp->arp_tha[5] = 0x00;
+                        memcpy(arpResp->arp_tpa, &ipH->ip_dst, 4);
+                        memcpy(arpResp->arp_sha, outEther->ether_shost, 6);
+                        memcpy(arpResp->arp_spa, &myIP->sin_addr, 4);
+                        //TARGET IP FROM ROUTE TABLE
+                        std::string ipStr(interface.ifa_name);
+                        char *ipGet = inet_ntoa(ipH->ip_dst);
+                        std::string ipStrGet(ipGet);
+                        std::vector<std::string> targetIF;
+
+//                    printf("ETHER HEADER:_________________________\n");
+//                    printf("My Mac: %02x:%02x:%02x:%02x:%02x:%02x\n", outEther->ether_shost[0],
+//                           outEther->ether_shost[1],
+//                           outEther->ether_shost[2], outEther->ether_shost[3], outEther->ether_shost[4],
+//                           outEther->ether_shost[5]);
+//
+//                    printf("Dest Mac: %02x:%02x:%02x:%02x:%02x:%02x\n", outEther->ether_dhost[0],
+//                           outEther->ether_dhost[1],
+//                           outEther->ether_dhost[2], outEther->ether_dhost[3], outEther->ether_dhost[4],
+//                           outEther->ether_dhost[5]);
+//
+//                    printf("Protocol: %x\n", outEther->ether_type);
+//
+//                    printf("ARPRESP HEADER:__________________\n");
+//
+//                    printf("Hardware: %x\n", ntohs(arpResp->arp_hrd));
+//                    printf("Protocol: %x\n", ntohs(arpResp->arp_pro));
+//                    printf("Hlen: %x\n", arpResp->arp_hln);
+//                    printf("Plen: %x\n", arpResp->arp_pln);
+//                    printf("Arp Op: %x\n", ntohs(arpResp->arp_op));
+//                    printf("Sender Mac: %02x:%02x:%02x:%02x:%02x:%02x\n", arpResp->arp_sha[0], arpResp->arp_sha[1],
+//                           arpResp->arp_sha[2], arpResp->arp_sha[3], arpResp->arp_sha[4], arpResp->arp_sha[5]);
+//                    printf("Dest Mac: %02x:%02x:%02x:%02x:%02x:%02x\n", arpResp->arp_tha[0], arpResp->arp_tha[1],
+//                           arpResp->arp_tha[2], arpResp->arp_tha[3], arpResp->arp_tha[4], arpResp->arp_tha[5]);
+//                    printf("Sender IP: %02d:%02d:%02d:%02d\n", arpResp->arp_spa[0], arpResp->arp_spa[1],
+//                           arpResp->arp_spa[2], arpResp->arp_spa[3]);
+//                    printf("Target IP: %02d:%02d:%02d:%02d\n", arpResp->arp_tpa[0], arpResp->arp_tpa[1],
+//                           arpResp->arp_tpa[2], arpResp->arp_tpa[3]);
+
+                        for (auto &x:table) {
+                            std::string bitsS = x.first.substr(x.first.find("/") + 1);
+                            unsigned int bits8 = std::stoul(bitsS);
+                            unsigned int bits = bits8 / 8;
+                            //printf("%d\n", bits);
+                            if (bits8 == 24) bits = 6;
+                            if (bits8 == 16) bits = 4;
+                            std::string cutIpGet = ipStrGet.substr(0, bits);
+                            std::string cutIpMap = x.first.substr(0, bits);
+                            //std::cout << cutIpGet << "|" << cutIpMap << '\n';
+                            if (cutIpGet.compare(cutIpMap) == 0) {
+                                //printf("Next Hop Match\n");
+                                targetIF = x.second;
+                                break;
+                            }
+                        }
+
+
+                        std::string targetStr;
+                        for (auto x:targetIF) {
+                            int l = x.find("eth");
+                            if (l != std::string::npos) {
+                                targetStr = x;
+                            }
+                        }
+
+                        int targetInt;
+                        for (auto &x:socketMap) {
+                            //std::cout << x.first->ifa_name << "|" << targetStr.c_str() << '\n';
+                            if (strcmp(x.first->ifa_name, targetStr.c_str()) == 0) {
+                                //printf("Hooray\n");
+                                targetInt = x.second;
+                            }
+
+                        }
+
+                        int sendArpReq = send(targetInt, &arpReqBuffer, 42, 0);
+                        if (sendArpReq < 0) { perror("Send ArpReq"); }
+
+
+                    }
                 }
             }
         }
@@ -418,7 +627,7 @@ public:
                 str = token;
                 std::cout << "Key: " << str << std::endl;
             } else {
-                char *x = (char *)"-";
+                char *x = (char *) "-";
                 if (token != x) {
                     current.push_back(token);
                     std::cout << "added: " << token << std::endl;
