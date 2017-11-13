@@ -22,6 +22,16 @@
 #include <netinet/ip_icmp.h>
 
 
+
+/**************************************************************************************
+ * The following class sets up the code for a router to run, creating multiple sockets
+ * for multiple interfaces. Accepts packets and executes code depending on the
+ * ether type.
+ *
+ * @author Cody West|Peiter Holleman
+ * @version Project 3 Forwarding
+ * @date 11/13/2017
+ *************************************************************************************/
 class Router {
 
 private:
@@ -43,6 +53,13 @@ private:
 
 public:
 
+    /*************************************************************************
+	 * Creates a checksum value based on the bytes passed to the methods.
+     * Uses standart checksum calculations.
+	 *
+	 * @param ptr the byte array
+	 * @param nbytes number of bytes to read
+	 ************************************************************************/
     unsigned short checksum(unsigned short *ptr, int nbytes) {
         register long sum;
         u_short oddbyte;
@@ -63,6 +80,10 @@ public:
         return (answer);
     }
 
+    /*************************************************************************
+	 * Prepares the sockets and interfaces for the router to work with.
+     * Populates the ipv4 map and socket map for future use.
+	 ************************************************************************/
     Router() {
 
         int packet_socket;
@@ -150,6 +171,9 @@ public:
         }
     }
 
+    /*************************************************************************
+	 * Creates multiple threads for each socket on router, running each one
+	 ************************************************************************/
     void printInterfaces() {
         std::cout << "Interfaces:\n";
         std::map<struct ifaddrs *, int>::iterator it;
@@ -181,6 +205,13 @@ public:
 
     }
 
+    /*************************************************************************
+	 * Takes an interface and listes for packets on its socket. Executes
+     * code depending on what is recieved and the routers table.
+	 *
+	 * @param interface interface linked to proper addresses
+	 * @param socket integer representing socket to listen on
+	 ************************************************************************/
     int listen(struct ifaddrs interface, int socket) {
 
         int packet_socket = socket;
@@ -642,6 +673,11 @@ public:
     }
 
 
+    /*************************************************************************
+	 * Reads a file to build a routing table for the proper router.
+	 *
+	 * @param filename name of the file to be read
+	 ************************************************************************/
     void buildTable(std::string filename) {
         FILE *fp = fopen(filename.c_str(), "r");
         char buff[1000];
