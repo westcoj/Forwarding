@@ -51,13 +51,13 @@ private:
 
 public:
 
-    /*************************************************************************
+	/*************************************************************************
 	 * Creates a checksum value based on the bytes passed to the methods.
-     * Uses standart checksum calculations.
+	 * Uses standart checksum calculations.
 	 *
 	 * @param ptr the byte array
 	 * @param nbytes number of bytes to read
-     * @return checksum for array of bytes
+	 * @return checksum for array of bytes
 	 ************************************************************************/
 	unsigned short checksum(unsigned short *ptr, int nbytes) {
 		register long sum;
@@ -79,9 +79,9 @@ public:
 		return (answer);
 	}
 
-    /*************************************************************************
+	/*************************************************************************
 	 * Prepares the sockets and interfaces for the router to work with.
-     * Populates the ipv4 map and socket map for future use.
+	 * Populates the ipv4 map and socket map for future use.
 	 ************************************************************************/
 	Router() {
 
@@ -156,12 +156,7 @@ public:
 					perror("bind");
 				}
 
-
-
-
-
-				//struct ether_header *etherH = (struct ether_header*)(buf);
-				//struct ether_arp *arpH = (struct ether_arp*)(buf);
+				;
 
 
 			}
@@ -170,7 +165,7 @@ public:
 		}
 	}
 
-    /*************************************************************************
+	/*************************************************************************
 	 * Creates multiple threads for each socket on router, running each one
 	 ************************************************************************/
 	void printInterfaces() {
@@ -203,33 +198,33 @@ public:
 		}
 
 	}
-    /*************************************************************************
+	/*************************************************************************
 	 * Creates multiple threads for each socket on router, running each one
-     *
-     * @return Number of router in use
+	 *
+	 * @return Number of router in use
 	 ************************************************************************/
-    int getNumber(){
-        std::map<struct ifaddrs *, int>::iterator it;
-        const int nums = socketMap.size();
-        std::thread t[5];
-        int i = 0;
-        for (it = socketMap.begin(); it != socketMap.end(); it++) {
-            if(strcmp(it->first->ifa_name,"r1-eth0")==0){
-                return 1;
-            }
+	int getNumber() {
+		std::map<struct ifaddrs *, int>::iterator it;
+		const int nums = socketMap.size();
+		std::thread t[5];
+		int i = 0;
+		for (it = socketMap.begin(); it != socketMap.end(); it++) {
+			if (strcmp(it->first->ifa_name, "r1-eth0") == 0) {
+				return 1;
+			}
 
-            if(strcmp(it->first->ifa_name,"r2-eth0")==0){
-                return 2;
-            }
+			if (strcmp(it->first->ifa_name, "r2-eth0") == 0) {
+				return 2;
+			}
 
-        }
+		}
 
-        return 0;
-    }
+		return 0;
+	}
 
-    /*************************************************************************
+	/*************************************************************************
 	 * Takes an interface and listes for packets on its socket. Executes
-     * code depending on what is recieved and the routers table.
+	 * code depending on what is recieved and the routers table.
 	 *
 	 * @param interface interface linked to proper addresses
 	 * @param socket integer representing socket to listen on
@@ -346,38 +341,38 @@ public:
 							ipHF->ip_ttl -= 1;
 							ipHF->ip_sum = checksum((unsigned short *) (forwardBuffer + 14), sizeof(struct ip));
 							//memcpy(forForBuff,forwardBuffer,(ipHFL+14));
-						
-						//if ttl is 0 send ttl exceeded icmp error
-						if(ipHF->ip_ttl == 0){
-							char icmp[78];
-							memcpy(icmp, buf, 50);
-							memcpy(icmp + 50, buf + 14, 36);
-							struct ether_header *errorEther = (struct ether_header *) (icmp);
-							struct ip *errorIp = (struct ip *)(icmp + 14);
-							struct icmphdr *errorIcmp = (struct icmphdr *)(icmp + 34);
 
-							memcpy(errorEther->ether_shost, mymac->sll_addr, 6);
-							memcpy(errorEther->ether_dhost, etherH->ether_shost, 6);
-							errorIp->ip_dst = errorIp->ip_src;
-							errorIp->ip_hl = 5;
-							errorIp->ip_v = 4;
-							errorIp->ip_tos = 0;
-							errorIp->ip_len = htons(64);
-							errorIp->ip_off = 0;
-							errorIp->ip_ttl = 64;
-							errorIp->ip_p = 1;
-							errorIp->ip_sum = 0;
-							errorIp->ip_sum = checksum((unsigned short *)(icmp + 14), sizeof(struct ip));
-							errorIcmp->type = 11;
-							errorIcmp->code = 0;
-							errorIcmp->checksum = checksum((unsigned short *) (icmp + 34), sizeof(struct icmphdr));
+							//if ttl is 0 send ttl exceeded icmp error
+							if (ipHF->ip_ttl == 0) {
+								char icmp[78];
+								memcpy(icmp, buf, 50);
+								memcpy(icmp + 50, buf + 14, 36);
+								struct ether_header *errorEther = (struct ether_header *) (icmp);
+								struct ip *errorIp = (struct ip *)(icmp + 14);
+								struct icmphdr *errorIcmp = (struct icmphdr *)(icmp + 34);
 
-							int sent = send(socket, icmp, 78, 0);
+								memcpy(errorEther->ether_shost, mymac->sll_addr, 6);
+								memcpy(errorEther->ether_dhost, etherH->ether_shost, 6);
+								errorIp->ip_dst = errorIp->ip_src;
+								errorIp->ip_hl = 5;
+								errorIp->ip_v = 4;
+								errorIp->ip_tos = 0;
+								errorIp->ip_len = htons(64);
+								errorIp->ip_off = 0;
+								errorIp->ip_ttl = 64;
+								errorIp->ip_p = 1;
+								errorIp->ip_sum = 0;
+								errorIp->ip_sum = checksum((unsigned short *)(icmp + 14), sizeof(struct ip));
+								errorIcmp->type = 11;
+								errorIcmp->code = 0;
+								errorIcmp->checksum = checksum((unsigned short *) (icmp + 34), sizeof(struct icmphdr));
+
+								int sent = send(socket, icmp, 78, 0);
 							}
 							char *ipGet = inet_ntoa(ipHF->ip_dst);
 							std::string ipStrGet(ipGet);
 							std::vector<std::string> targetIF;
-
+							int found = 0;
 							//GET CORRECT INTERFACE VECTOR
 							for (auto &x : table) {
 								std::string bitsS = x.first.substr(x.first.find("/") + 1);
@@ -392,11 +387,12 @@ public:
 								if (cutIpGet.compare(cutIpMap) == 0) {
 									printf("Next Hop Match\n\n");
 									targetIF = x.second;
+									found = 1;
 									break;
 								}
 							}
-							
-							if(targetIF.size() == 0) {
+
+							if (found == 0) {
 
 
 								char icmp[78];
@@ -421,9 +417,9 @@ public:
 								errorIcmp->type = 3;
 								errorIcmp->code = 0;
 								errorIcmp->checksum = checksum((unsigned short *) (icmp + 34), sizeof(struct icmphdr));
-	
+
 								int sent = send(socket, icmp, 78, 0);
-                                forwardBuffer[0] = '\0';
+								forwardBuffer[0] = '\0';
 
 							}
 							//FIND ETH STRING IN VECTOR
@@ -455,8 +451,47 @@ public:
 							memcpy(forForBuff, forwardBuffer, (ipHFL + 14));
 
 							int forwardFRep = send(targetInt, &forForBuff, (ipHFL + 14), 0);
-							if (forwardFRep < 0) { perror("Send ArpReq"); }
-                            forwardBuffer[0] = '\0';
+							if (forwardFRep < 0) {
+								perror("Send ArpReq");
+
+								char icmp[78];
+								memcpy(icmp, buf, 50);
+								memcpy(icmp + 50, buf + 14, 28);
+								struct ether_header *errorEther = (struct ether_header *) (icmp);
+								struct ip *errorIp = (struct ip *)(icmp + 14);
+								struct icmphdr *errorIcmp = (struct icmphdr *)(icmp + 34);
+
+								memcpy(errorEther->ether_shost, mymac->sll_addr, 6);
+								memcpy(errorEther->ether_dhost, etherH->ether_shost, 6);
+								errorIp->ip_dst = errorIp->ip_src;
+								errorIp->ip_hl = 5;
+								errorIp->ip_v = 4;
+								errorIp->ip_tos = 0;
+								errorIp->ip_len = htons(64);
+								errorIp->ip_off = 0;
+								errorIp->ip_ttl = 64;
+								errorIp->ip_p = 1;
+								errorIp->ip_sum = 0;
+								errorIp->ip_sum = checksum((unsigned short *)(icmp + 14), sizeof(struct ip));
+								errorIcmp->type = 3;
+								errorIcmp->code = 1;
+								errorIcmp->checksum = checksum((unsigned short *) (icmp + 34), sizeof(struct icmphdr));
+
+								int sent = send(socket, icmp, 78, 0);
+
+
+
+
+
+
+
+
+
+
+
+
+							}
+							forwardBuffer[0] = '\0';
 
 
 						}
@@ -493,7 +528,7 @@ public:
 						errorIcmp->checksum = checksum((unsigned short *) (icmp + 34), sizeof(struct icmphdr));
 
 						int sent = send(socket, icmp, 78, 0);
-						
+
 
 					}
 
@@ -582,7 +617,35 @@ public:
 							                            (sizeof(struct icmphdr) + 48));
 							//memcpy(replyBuffer+50,buf+50,48);
 							int sender = send(packet_socket, &replyBuffer, 90, 0);
-							if (sender < 0) { perror("Send ICMP"); }
+							if (sender < 0) {
+								perror("Send ICMP");
+
+								char icmp[78];
+								memcpy(icmp, buf, 50);
+								memcpy(icmp + 50, buf + 14, 28);
+								struct ether_header *errorEther = (struct ether_header *) (icmp);
+								struct ip *errorIp = (struct ip *)(icmp + 14);
+								struct icmphdr *errorIcmp = (struct icmphdr *)(icmp + 34);
+
+								memcpy(errorEther->ether_shost, mymac->sll_addr, 6);
+								memcpy(errorEther->ether_dhost, etherH->ether_shost, 6);
+								errorIp->ip_dst = errorIp->ip_src;
+								errorIp->ip_hl = 5;
+								errorIp->ip_v = 4;
+								errorIp->ip_tos = 0;
+								errorIp->ip_len = htons(64);
+								errorIp->ip_off = 0;
+								errorIp->ip_ttl = 64;
+								errorIp->ip_p = 1;
+								errorIp->ip_sum = 0;
+								errorIp->ip_sum = checksum((unsigned short *)(icmp + 14), sizeof(struct ip));
+								errorIcmp->type = 3;
+								errorIcmp->code = 1;
+								errorIcmp->checksum = checksum((unsigned short *) (icmp + 34), sizeof(struct icmphdr));
+
+								int sent = send(socket, icmp, 78, 0);
+
+							}
 
 
 						}
@@ -594,12 +657,12 @@ public:
 				//THIS PACKET NOT FOR ME
 				else {
 
-				//	char icmp[78];
-				//	memcpy(icmp, buf, 50);
-				//	memcpy(icmp + 50, buf + 14, 28);
-				//		struct ether_header *errorEther = (struct ether_header *) (icmp);
-				//		struct ip *errorIp = (struct ip *)(icmp + 14);
-				//		struct icmphdr *errorIcmp = (struct icmphdr *)(icmp + 34);
+					//	char icmp[78];
+					//	memcpy(icmp, buf, 50);
+					//	memcpy(icmp + 50, buf + 14, 28);
+					//		struct ether_header *errorEther = (struct ether_header *) (icmp);
+					//		struct ip *errorIp = (struct ip *)(icmp + 14);
+					//		struct icmphdr *errorIcmp = (struct icmphdr *)(icmp + 34);
 //
 //						memcpy(errorEther->ether_shost, mymac->sll_addr, 6);
 //						memcpy(errorEther->ether_dhost, etherH->ether_shost, 6);
@@ -785,33 +848,34 @@ public:
 						}
 
 						int sendArpReq = send(targetInt, &arpReqBuffer, 42, 0);
-						if (sendArpReq < 0) { perror("Send ArpReq"); 
+						if (sendArpReq < 0) {
+							perror("Send ArpReq");
 
-	
-								char icmp[78];
-								memcpy(icmp, buf, 50);
-								memcpy(icmp + 50, buf + 14, 28);
-								struct ether_header *errorEther = (struct ether_header *) (icmp);
-								struct ip *errorIp = (struct ip *)(icmp + 14);
-								struct icmphdr *errorIcmp = (struct icmphdr *)(icmp + 34);
 
-								memcpy(errorEther->ether_shost, mymac->sll_addr, 6);
-								memcpy(errorEther->ether_dhost, etherH->ether_shost, 6);
-								errorIp->ip_dst = errorIp->ip_src;
-								errorIp->ip_hl = 5;
-								errorIp->ip_v = 4;
-								errorIp->ip_tos = 0;
-								errorIp->ip_len = htons(64);
-								errorIp->ip_off = 0;
-								errorIp->ip_ttl = 64;
-								errorIp->ip_p = 1;
-								errorIp->ip_sum = 0;
-								errorIp->ip_sum = checksum((unsigned short *)(icmp + 14), sizeof(struct ip));
-								errorIcmp->type = 3;
-								errorIcmp->code = 0;
-								errorIcmp->checksum = checksum((unsigned short *) (icmp + 34), sizeof(struct icmphdr));
-	
-								int sent = send(socket, icmp, 78, 0);
+							char icmp[78];
+							memcpy(icmp, buf, 50);
+							memcpy(icmp + 50, buf + 14, 28);
+							struct ether_header *errorEther = (struct ether_header *) (icmp);
+							struct ip *errorIp = (struct ip *)(icmp + 14);
+							struct icmphdr *errorIcmp = (struct icmphdr *)(icmp + 34);
+
+							memcpy(errorEther->ether_shost, mymac->sll_addr, 6);
+							memcpy(errorEther->ether_dhost, etherH->ether_shost, 6);
+							errorIp->ip_dst = errorIp->ip_src;
+							errorIp->ip_hl = 5;
+							errorIp->ip_v = 4;
+							errorIp->ip_tos = 0;
+							errorIp->ip_len = htons(64);
+							errorIp->ip_off = 0;
+							errorIp->ip_ttl = 64;
+							errorIp->ip_p = 1;
+							errorIp->ip_sum = 0;
+							errorIp->ip_sum = checksum((unsigned short *)(icmp + 14), sizeof(struct ip));
+							errorIcmp->type = 3;
+							errorIcmp->code = 0;
+							errorIcmp->checksum = checksum((unsigned short *) (icmp + 34), sizeof(struct icmphdr));
+
+							int sent = send(socket, icmp, 78, 0);
 						}
 
 
@@ -827,7 +891,7 @@ public:
 		return 0;
 	}
 
-    /*************************************************************************
+	/*************************************************************************
 	 * Reads a file to build a routing table for the proper router.
 	 *
 	 * @param filename name of the file to be read
@@ -878,17 +942,17 @@ public:
 int main() {
 
 	Router test;
-    int r = test.getNumber();
-    test.printInterfaces();
-    printf("Building table %d\n",r);
-    if (r == 1) {
-        test.buildTable("r1-table.txt");
-    }
-    if (r == 2) {
-        test.buildTable("r2-table.txt");
-    }
+	int r = test.getNumber();
+	test.printInterfaces();
+	printf("Building table %d\n", r);
+	if (r == 1) {
+		test.buildTable("r1-table.txt");
+	}
+	if (r == 2) {
+		test.buildTable("r2-table.txt");
+	}
 
-    while(1){}
+	while (1) {}
 
 //    printf("done");
 
