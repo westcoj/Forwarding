@@ -42,12 +42,9 @@ private:
 	std::map<char *, struct sockaddr_in *> ipv4map;
 	std::map<u_int8_t *, uint32_t> macMap;
 	std::vector<char *> packetHold;
-	//std::map<char *, struct sockaddr_in *>::iterator ipv4IT;
-
+	
 	//keep the initial linked list around
 	struct ifaddrs *ifaddr;
-
-	//std::vector<std::string[]> routingTable;
 
 public:
 
@@ -155,13 +152,6 @@ public:
 				if (bind(packet_socket, tmp->ifa_addr, sizeof(struct sockaddr_ll)) == -1) {
 					perror("bind");
 				}
-
-
-
-
-
-				//struct ether_header *etherH = (struct ether_header*)(buf);
-				//struct ether_arp *arpH = (struct ether_arp*)(buf);
 
 
 			}
@@ -377,7 +367,7 @@ public:
 							char *ipGet = inet_ntoa(ipHF->ip_dst);
 							std::string ipStrGet(ipGet);
 							std::vector<std::string> targetIF;
-
+							int found = 0;
 							//GET CORRECT INTERFACE VECTOR
 							for (auto &x : table) {
 								std::string bitsS = x.first.substr(x.first.find("/") + 1);
@@ -392,11 +382,12 @@ public:
 								if (cutIpGet.compare(cutIpMap) == 0) {
 									printf("Next Hop Match\n\n");
 									targetIF = x.second;
+									int found = 1;
 									break;
 								}
 							}
 							
-							if(targetIF.size() == 0) {
+							if(found == 0) {
 
 
 								char icmp[78];
